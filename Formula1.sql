@@ -16,6 +16,21 @@ FROM circuits
 GROUP BY 1
 ORDER BY 2 DESC;
 
+-- Which starting position gives the highest chance of winning at each circuit
+WITH positions AS(
+SELECT circuits.name AS circuit, results.grid AS start_position, COUNT(results.position) AS num_of_wins,
+MAX(COUNT(results.position)) OVER(PARTITION BY circuits.name) AS most_wins
+FROM races
+	JOIN circuits ON races.circuitId = circuits.circuitId
+    JOIN results On races.raceId = results.raceId
+WHERE results.position = 1
+GROUP BY 1,2
+ORDER BY 1)
+
+SELECT circuit, start_position, num_of_wins
+FROM positions
+WHERE (circuit, start_position, num_of_wins) = (circuit, start_position, most_wins);
+
 -- How many constructors have been in the sport since 1950
 SELECT COUNT(DISTINCT name) AS constructors
 FROM constructors;
