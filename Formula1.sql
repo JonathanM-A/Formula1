@@ -135,6 +135,27 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 5;
 
+-- Driver win percentage
+WITH num_races AS(
+SELECT drivers.driverId, surname AS name, COUNT(results.driverid) AS num_of_races
+FROM drivers
+	JOIN results ON drivers.driverId = results.driverId
+GROUP BY 1
+ORDER BY 2 DESC),
+
+num_wins AS(
+SELECT drivers.driverId, surname AS name, COUNT(results.position) AS num_of_wins
+FROM drivers
+	JOIN results ON drivers.driverId = results.driverId
+WHERE results.position = 1
+GROUP BY 1
+ORDER BY 2 DESC)
+
+SELECT num_wins.name, num_of_races, ROUND((num_wins.num_of_wins/num_races.num_of_races) * 100, 2) AS win_percentage
+FROM num_races
+	JOIN num_wins on num_races.driverId = num_wins.driverId
+ORDER BY 3 DESC;
+
 -- Which 5 drivers have the most podium finishes
 SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.position) AS num_of_podiums
 FROM drivers
