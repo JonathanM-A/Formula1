@@ -365,6 +365,142 @@ FROM circuits
 GROUP BY 1
 ORDER BY 2 DESC;
 ```
+
+## Querying qualifying
+- Qualifying is the chance for drivers to determine where they line up for the coming race and show their raw pace in the car. Drivers are compared to their teammates in similar machinery to determine how fast they are. Placing first in qualifying (pole postion) usually bodes well for the coming race
+```
+-- Which 5 drivers have the most pole positions
+SELECT drivers.surname AS driver, COUNT(qualifying.position) AS num_of_poles
+FROM qualifying
+JOIN drivers on qualifying.driverid = drivers.driverid
+WHERE position = 1
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 5;
+```
+```
+-- Which constructor has the most Q3 entries
+SELECT constructors.name, COUNT(position) AS num_of_Q3
+FROM qualifying
+JOIN constructors ON qualifying.constructorId = constructors.constructorId
+WHERE q3 != '\N'
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1;
+```
+```
+-- Which starting position gives the highest chance of winning at each circuit
+WITH positions AS(
+SELECT circuits.name AS circuit, results.grid AS start_position, COUNT(results.position) AS num_of_wins,
+MAX(COUNT(results.position)) OVER(PARTITION BY circuits.name) AS most_wins
+FROM races
+	JOIN circuits ON races.circuitId = circuits.circuitId
+    JOIN results On races.raceId = results.raceId
+WHERE results.position = 1
+GROUP BY 1,2
+ORDER BY 1)
+
+SELECT circuit, start_position, num_of_wins
+FROM positions
+WHERE (circuit, start_position, num_of_wins) = (circuit, start_position, most_wins);
+```
+- Finding the head-to-head record between teammates for each season and for the duration of the pairing with the help of Common Table Expressions (CTE)
+```
+-- Qualifying head-to-head between teammates (Grouped into seasons)
+WITH driver1 AS
+(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
+		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=1),
+
+driver2 AS
+(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
+		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=2)
+
+SELECT year, constructor, pairing,
+CASE
+    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
+    ELSE H2H
+END AS H2H
+FROM(select year, constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
+FROM(SELECT year, constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
+    FROM (
+        SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
+            CASE
+            WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
+            ELSE first_driver
+        END AS quali_winner
+        FROM driver1
+        JOIN driver2 ON driver1.raceId = driver2.raceId
+		    AND driver1.year = driver2.year
+		    AND driver1.constructor = driver2.constructor
+    ORDER BY 1, 2) AS table1
+GROUP BY 1,2,3,4
+ORDER BY 1,2,3,4) AS table2 
+GROUP BY 1,2,3) AS table3;
+```
+```
+-- Qualifying head-to-head between teammates (Without season grouping)
+WITH driver1 AS
+(SELECT * 
+FROM (
+	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
+			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+		JOIN constructors ON results.constructorId = constructors.constructorID
+		JOIN races ON results.raceId = races.raceid
+		JOIN drivers ON results.driverId = drivers.driverId
+		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=1),
+
+driver2 AS
+(SELECT *
+FROM (
+	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
+			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+		JOIN constructors ON results.constructorId = constructors.constructorID
+		JOIN races ON results.raceId = races.raceid
+		JOIN drivers ON results.driverId = drivers.driverId
+		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=2)
+
+
+SELECT constructor, pairing,
+CASE
+    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
+    ELSE H2H
+END AS H2H
+FROM (
+	SELECT constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
+	FROM (
+		SELECT constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
+		FROM (
+			SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
+				CASE
+					WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
+					ELSE first_driver
+				END AS quali_winner
+			FROM driver1
+				JOIN driver2 ON driver1.raceId = driver2.raceId
+					AND driver1.year = driver2.year
+					AND driver1.constructor = driver2.constructor
+			ORDER BY 1, 2) AS table1
+		GROUP BY 1,2,3
+		ORDER BY 1,2,3) AS table2
+	GROUP BY 1,2) AS table3;
+```
+
 - Using JOIN and TEMPORARY TABLES, the fastest lap at each circuit was determined as well as the driver who set the lap
 ```
 -- Data is limited so fastest lap for only 40 tracks available
@@ -620,123 +756,4 @@ FROM pit_stops
 JOIN drivers ON pit_stops.driverid = drivers.driverid
 GROUP BY 1,2
 ORDER BY 3;
-```
-
-## Querying qualifying
-- Qualifying is the chance for drivers to determine where they line up for the coming race and show their raw pace in the car. Drivers are compared to their teammates in similar machinery to determine how fast they are. Placing first in qualifying (pole postion) usually bodes well for the coming race
-```
--- Which 5 drivers have the most pole positions
-SELECT drivers.surname AS driver, COUNT(qualifying.position) AS num_of_poles
-FROM qualifying
-JOIN drivers on qualifying.driverid = drivers.driverid
-WHERE position = 1
-GROUP BY 1
-ORDER BY 2 DESC
-LIMIT 5;
-```
-```
--- Which constructor has the most Q3 entries
-SELECT constructors.name, COUNT(position) AS num_of_Q3
-FROM qualifying
-JOIN constructors ON qualifying.constructorId = constructors.constructorId
-WHERE q3 != '\N'
-GROUP BY 1
-ORDER BY 2 DESC
-LIMIT 1;
-```
-- Finding the head-to-head record between teammates for each season and for the duration of the pairing with the help of Common Table Expressions (CTE)
-```
--- Qualifying head-to-head between teammates (Grouped into seasons)
-WITH driver1 AS
-(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
-		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
-	FROM results
-	JOIN constructors ON results.constructorId = constructors.constructorID
-	JOIN races ON results.raceId = races.raceid
-	JOIN drivers ON results.driverId = drivers.driverId
-    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
-WHERE driver_num=1),
-
-driver2 AS
-(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
-		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
-	FROM results
-	JOIN constructors ON results.constructorId = constructors.constructorID
-	JOIN races ON results.raceId = races.raceid
-	JOIN drivers ON results.driverId = drivers.driverId
-    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
-WHERE driver_num=2)
-
-SELECT year, constructor, pairing,
-CASE
-    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
-    ELSE H2H
-END AS H2H
-FROM(select year, constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
-FROM(SELECT year, constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
-    FROM (
-        SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
-            CASE
-            WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
-            ELSE first_driver
-        END AS quali_winner
-        FROM driver1
-        JOIN driver2 ON driver1.raceId = driver2.raceId
-		    AND driver1.year = driver2.year
-		    AND driver1.constructor = driver2.constructor
-    ORDER BY 1, 2) AS table1
-GROUP BY 1,2,3,4
-ORDER BY 1,2,3,4) AS table2 
-GROUP BY 1,2,3) AS table3;
-```
-```
--- Qualifying head-to-head between teammates (Without season grouping)
-WITH driver1 AS
-(SELECT * 
-FROM (
-	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
-			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
-	FROM results
-		JOIN constructors ON results.constructorId = constructors.constructorID
-		JOIN races ON results.raceId = races.raceid
-		JOIN drivers ON results.driverId = drivers.driverId
-		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
-WHERE driver_num=1),
-
-driver2 AS
-(SELECT *
-FROM (
-	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
-			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
-	FROM results
-		JOIN constructors ON results.constructorId = constructors.constructorID
-		JOIN races ON results.raceId = races.raceid
-		JOIN drivers ON results.driverId = drivers.driverId
-		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
-WHERE driver_num=2)
-
-
-SELECT constructor, pairing,
-CASE
-    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
-    ELSE H2H
-END AS H2H
-FROM (
-	SELECT constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
-	FROM (
-		SELECT constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
-		FROM (
-			SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
-				CASE
-					WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
-					ELSE first_driver
-				END AS quali_winner
-			FROM driver1
-				JOIN driver2 ON driver1.raceId = driver2.raceId
-					AND driver1.year = driver2.year
-					AND driver1.constructor = driver2.constructor
-			ORDER BY 1, 2) AS table1
-		GROUP BY 1,2,3
-		ORDER BY 1,2,3) AS table2
-	GROUP BY 1,2) AS table3;
 ```
