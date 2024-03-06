@@ -365,7 +365,7 @@ FROM circuits
 GROUP BY 1
 ORDER BY 2 DESC;
 ```
-- Using JOIN and TEMPORARY TABLES, the fastest lap at each circuit was determined as well asa the driver who set the lap
+- Using JOIN and TEMPORARY TABLES, the fastest lap at each circuit was determined as well as the driver who set the lap
 ```
 -- Data is limited so fastest lap for only 40 tracks available
 # Adding drivers' name to laptimes table
@@ -390,4 +390,331 @@ FROM races
 	JOIN drivers_laps ON drivers_laps.raceId = races.raceId
 	JOIN circuits ON races.circuitId = circuits.circuitId
 WHERE (circuits.name, time) IN (SELECT * from fastest_lap);
+```
+
+## Querying constructors
+- The total number of constructors that have been in the sport was determined
+```
+SELECT COUNT(DISTINCT name) AS constructors
+FROM constructors;
+```
+- USING JOIN, the success of each constructor was evaluated based on points accumulated and wins
+```
+-- How many points has each constructor scored
+SELECT constructors.name, SUM(points) AS total_points
+FROM constructor_results
+JOIN constructors ON constructor_results.constructorId = constructors.constructorId
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+```
+-- Which constructor has the most wins
+SELECT constructors.name, COUNT(position) AS num_of_wins
+FROM constructor_standings
+JOIN constructors ON constructor_standings.constructorId = constructors.constructorId
+WHERE position = 1
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+- One important accomplishment for a constructor is finishing a race with both cars in the lead (1-2 finish). The constructor with the most 1-2 finishes was determined
+```
+-- Which constructor has the most 1st and 2nd finishes in a single race
+DROP VIEW IF EXISTS first_place;
+CREATE VIEW first_place AS 
+SELECT raceId, constructors.name, position AS first
+FROM results
+JOIN constructors ON results.constructorId = constructors.constructorId
+WHERE position = 1;
+
+DROP VIEW IF exists second_place;
+CREATE VIEW second_place AS
+SELECT raceId, constructors.name, position AS second
+FROM results
+JOIN constructors ON results.constructorId = constructors.constructorId
+WHERE position = 2;
+
+SELECT first_place.name, COUNT(first_place.first) as num_of_1_2_finishes
+FROM first_place
+JOIN second_place ON first_place.raceId = second_place.raceId
+WHERE first_place.raceId = second_place.raceId
+AND first_place.name = second_place.name
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1;
+```
+- In order to succeed in Formula 1, the car and driver have to be reliable. The most unreliable constructor was determined by calculating the percentage of races they were eligible for but did not start or complete
+```
+-- Which constructor is most unreliable (DNFs as a percentage of number of races)
+DROP VIEW IF EXISTS status_mod;
+CREATE VIEW status_mod AS
+SELECT *,
+CASE
+    WHEN status LIKE '%lap%' THEN 'Finished'
+    WHEN status = 'Finished' THEN 'Finished'
+    ELSE 'DNF'
+    END AS status_class
+FROM status;
+
+# Total races for each team (Each team fields at most 2 cars)
+DROP VIEW IF EXISTS total_races;
+CREATE VIEW total_races AS
+SELECT results.constructorId, count(resultId) AS total_races
+FROM results
+JOIN constructors ON results.constructorid = constructors.constructorid
+GROUP BY results.constructorId, constructors.name
+ORDER BY 2 DESC;
+
+# Total DNFs for each team
+DROP VIEW IF EXISTS total_dnf;
+CREATE VIEW total_dnf AS
+SELECT results.constructorId, COUNT(status_mod.status_class) AS total_dnf
+FROM results
+LEFT JOIN constructors ON results.constructorid = constructors.constructorid
+LEFT JOIN status_mod ON results.statusid = status_mod.statusid
+WHERE status_class = 'DNF'
+GROUP BY results.constructorId, constructors.name
+ORDER BY 2 DESC;
+
+# Finding percentage of DNFs
+SELECT constructors.name, ROUND((total_dnf / total_races) * 100, 2) AS DNF_Percentage
+FROM total_races
+JOIN dnfs ON dnfs.constructorId = total_races.constructorId
+JOIN constructors ON constructors.constructorId = total_races.constructorId
+WHERE dnfs.constructorId = total_races.constructorId
+ORDER BY 2;
+```
+
+## Querying drivers
+- SQL queries were executed to determine the number of drivers, the different nationalities as well as the number of drivers produced from each country
+```
+-- How many drivers have raced in Formula 1
+SELECT COUNT(DISTINCT driverid) num_of_drivers
+FROM drivers;
+```
+```
+-- How many different driver nationalities have raced in F1
+SELECT COUNT(DISTINCT nationality) AS num_of_nationalities
+FROM drivers;
+```
+```
+-- How many drivers come from each country
+SELECT nationality, COUNT(driverId) AS num_of_drivers
+FROM drivers
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+- Each constructor fields a maximum of 2 cars and teammate pairings determine how well a constructor will do. The teammate pairings for each constructor in each season were extracted from the data
+```
+WITH driver1 AS
+(SELECT * FROM (
+	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver,
+	ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY results.driverid) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    ) AS teammates
+WHERE driver_num = 1),
+
+driver2 AS
+(SELECT * FROM(
+	select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver,
+		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    ) AS teammates
+WHERE driver_num = 2)
+
+SELECT year, constructor, first_driver, second_driver
+FROM(
+	SELECT driver1.year, driver1.constructor, driver1.first_driver, driver2.second_driver,
+		ROW_NUMBER() OVER(PARTITION BY driver1.year, driver1.constructor, driver1.first_driver, driver2.second_driver) as row_num
+	FROM driver1
+	JOIN driver2 ON driver1.raceId = driver2.raceId
+		AND driver1.year = driver2.year
+		AND driver1.constructor = driver2.constructor) AS alias
+WHERE row_num = 1
+	AND first_driver != second_driver;
+```
+- Longevity is an admired quality in sports. The 5 drivers with the most races was determined
+```
+-- Which 5 drivers have the most races
+SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.driverid) AS num_of_races
+FROM drivers
+JOIN results ON drivers.driverId = results.driverId
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 5;
+```
+- The goal for drivers in Formuula 1 is to win races and if not, get on the podium
+```
+-- Which 5 drivers have the most wins
+SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.position) AS num_of_wins
+FROM drivers
+JOIN results ON drivers.driverId = results.driverId
+WHERE results.position = 1
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 5;
+```
+```
+-- Which 5 drivers have the most podium finishes
+SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.position) AS num_of_podiums
+FROM drivers
+JOIN results ON drivers.driverId = results.driverId
+WHERE results.position IN (1, 2, 3)
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 5;
+```
+```
+-- Which drivers have never finised on the podium
+SELECT CONCAT(forename, ' ',  surname) AS nonpodium_finishers
+FROM drivers
+WHERE (SELECT CONCAT(forename, ' ',  surname)) NOT IN 
+	(SELECT CONCAT(forename, ' ',  surname)
+FROM drivers
+JOIN results ON drivers.driverId = results.driverId
+WHERE results.position IN (1, 2, 3));
+```
+```
+-- How many drivers have never finished on the podium
+SELECT COUNT(forename) AS num_of_nonpodium_finishers
+FROM drivers
+WHERE (SELECT drivers.driverid) NOT IN 
+	(SELECT drivers.driverid
+FROM drivers
+JOIN results ON drivers.driverId = results.driverId
+WHERE results.position IN (1, 2, 3));
+```
+
+## Querying pit_stops
+- An important aspect of a Formula 1 race is the pit stop. The duration of a pitstop can be the make it or break it point in a race. This is a factor of both the driver's ability and team mechanics. The average pit stop duration for each driver was determined
+```
+SELECT pit_stops.driverId, drivers.surname, ROUND(AVG(duration),2) AS AVG_pitstop_duration
+FROM pit_stops
+JOIN drivers ON pit_stops.driverid = drivers.driverid
+GROUP BY 1,2
+ORDER BY 3;
+```
+
+## Querying qualifying
+- Qualifying is the chance for drivers to determine where they line up for the coming race and show their raw pace in the car. Drivers are compared to their teammates in similar machinery to determine how fast they are. Placing first in qualifying (pole postion) usually bodes well for the coming race
+```
+-- Which 5 drivers have the most pole positions
+SELECT drivers.surname AS driver, COUNT(qualifying.position) AS num_of_poles
+FROM qualifying
+JOIN drivers on qualifying.driverid = drivers.driverid
+WHERE position = 1
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 5;
+```
+```
+-- Which constructor has the most Q3 entries
+SELECT constructors.name, COUNT(position) AS num_of_Q3
+FROM qualifying
+JOIN constructors ON qualifying.constructorId = constructors.constructorId
+WHERE q3 != '\N'
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1;
+```
+- Finding the head-to-head record between teammates for each season and for the duration of the pairing with the help of Common Table Expressions (CTE)
+```
+-- Qualifying head-to-head between teammates (Grouped into seasons)
+WITH driver1 AS
+(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
+		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=1),
+
+driver2 AS
+(SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
+		ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+	JOIN constructors ON results.constructorId = constructors.constructorID
+	JOIN races ON results.raceId = races.raceid
+	JOIN drivers ON results.driverId = drivers.driverId
+    JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=2)
+
+SELECT year, constructor, pairing,
+CASE
+    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
+    ELSE H2H
+END AS H2H
+FROM(select year, constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
+FROM(SELECT year, constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
+    FROM (
+        SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
+            CASE
+            WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
+            ELSE first_driver
+        END AS quali_winner
+        FROM driver1
+        JOIN driver2 ON driver1.raceId = driver2.raceId
+		    AND driver1.year = driver2.year
+		    AND driver1.constructor = driver2.constructor
+    ORDER BY 1, 2) AS table1
+GROUP BY 1,2,3,4
+ORDER BY 1,2,3,4) AS table2 
+GROUP BY 1,2,3) AS table3;
+```
+```
+-- Qualifying head-to-head between teammates (Without season grouping)
+WITH driver1 AS
+(SELECT * 
+FROM (
+	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
+			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+		JOIN constructors ON results.constructorId = constructors.constructorID
+		JOIN races ON results.raceId = races.raceid
+		JOIN drivers ON results.driverId = drivers.driverId
+		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=1),
+
+driver2 AS
+(SELECT *
+FROM (
+	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS second_driver, qualifying.position AS 2_quali_position,
+			ROW_NUMBER() OVER(PARTITION BY races.raceId, races.year, constructors.name ORDER BY drivers.surname) AS driver_num
+	FROM results
+		JOIN constructors ON results.constructorId = constructors.constructorID
+		JOIN races ON results.raceId = races.raceid
+		JOIN drivers ON results.driverId = drivers.driverId
+		JOIN qualifying ON results.raceId = qualifying.raceId AND results.driverId = qualifying.driverId) as teammates
+WHERE driver_num=2)
+
+
+SELECT constructor, pairing,
+CASE
+    WHEN H2H NOT LIKE '%-%' THEN CONCAT(H2H, '-', 0)
+    ELSE H2H
+END AS H2H
+FROM (
+	SELECT constructor, pairing, GROUP_CONCAT(H2H SEPARATOR '-') AS H2H
+	FROM (
+		SELECT constructor, CONCAT(first_driver, ' - ', second_driver) AS pairing, quali_winner, COUNT(quali_winner) AS H2H
+		FROM (
+			SELECT driver1.year, driver1.constructor, driver1.first_driver, driver1.1_quali_position, driver2.second_driver, driver2.2_quali_position,
+				CASE
+					WHEN driver1.1_quali_position > driver2.2_quali_position THEN second_driver
+					ELSE first_driver
+				END AS quali_winner
+			FROM driver1
+				JOIN driver2 ON driver1.raceId = driver2.raceId
+					AND driver1.year = driver2.year
+					AND driver1.constructor = driver2.constructor
+			ORDER BY 1, 2) AS table1
+		GROUP BY 1,2,3
+		ORDER BY 1,2,3) AS table2
+	GROUP BY 1,2) AS table3;
 ```
