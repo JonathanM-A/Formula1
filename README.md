@@ -5,7 +5,7 @@ This project is an analysis of Formula 1 data from 1950-2023 using SQL. The anal
 ## Creating a New Database
 - A new database was created to prvide a dedicated environment for this project
 
-```
+```SQL
 CREATE DATABASE formula1;
 USE formula1;
 ```
@@ -14,7 +14,7 @@ USE formula1;
 - Tables with the relevant data were added to the dataset.
 #### circuits ***(Full query available in files)***
 - In order to allow mass insertion of the data, '0' was added to fill blank spaces in circuits.alt after which they were updated to NULL.
-```
+```SQL
 CREATE TABLE circuits(
   circuitiD INT PRIMARY KEY,
   circuitRef VARCHAR (255),
@@ -39,7 +39,7 @@ SET alt = NULL
 WHERE alt = 0;
   ```
 #### constructors ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE constructors(
   constructorId INT NOT NULL PRIMARY KEY,
   constructorRef VARCHAR(30),
@@ -60,7 +60,7 @@ INSERT INTO constructors(constructorId, constructorRef, name, nationality) VALUE
 ...
 ```
 #### constructor_results ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE constructor_results(
   constructorResultsId INT PRIMARY KEY,
   raceId INT NOT NULL,
@@ -83,7 +83,7 @@ INSERT INTO constructor_results (constructorResultsId, raceId, constructorId, po
 ```
 
 #### constructor_standings ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE constructor_standings(
   constructorStandingsId INT NOT NULL PRIMARY KEY,
   raceId INT NOT NULL,
@@ -108,7 +108,7 @@ INSERT INTO constructor_standings (constructorStandingsId, raceId, constructorId
 ```
 
 #### drivers ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE drivers(
   driverId INT PRIMARY KEY,
   driverRef VARCHAR(50),
@@ -134,7 +134,7 @@ INSERT INTO drivers(driverId, driverRef, number, code, forename, surname, dob, n
 ```
 
 #### driver_standings ***(Full query available in files)***
-```
+```SQL
 USE formula1;
 DROP TABLE IF EXISTS driver_standings;
 CREATE TABLE driver_standings(
@@ -161,7 +161,7 @@ INSERT INTO driver_standings(driverStandingsId, raceId, driverId, points, positi
 ```
 
 #### lap_times ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE lap_times(
   raceId INT NOT NULL,
   driverId INT NOT NULL,
@@ -184,7 +184,7 @@ INSERT INTO lap_times (raceId, driverId, lap, position, time, milliseconds) VALU
 ```
 
 #### pit_stops ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE pit_stops(
   raceId INT NOT NULL,
   driverId INT NOT NULL,
@@ -209,7 +209,7 @@ INSERT INTO pit_stops (raceId, driverId, stop, lap, time, duration, milliseconds
 ```
 
 #### qualifying ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE qualifying(
   qualifyid INT PRIMARY KEY,
   raceId INT NOT NULL,
@@ -236,7 +236,7 @@ INSERT INTO qualifying (qualifyid, raceId, driverId, constructorId, number, posi
 ```
 
 #### races ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE races(
   raceid INT PRIMARY KEY,
   year YEAR,
@@ -259,7 +259,7 @@ INSERT INTO races(raceid, year, round, circuitid, name)  VALUES(10, 2009, 10, 11
 ```
 
 #### results ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE results(
   resultId INT PRIMARY KEY,
   raceId INT,
@@ -291,7 +291,7 @@ INSERT INTO results (resultId, raceId, driverId, constructorId, number, grid, po
 ```
 
 #### sprint_results ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE sprint_results(
   resultId INT PRIMARY KEY,
   raceId INT NOT NULL,
@@ -322,7 +322,7 @@ INSERT INTO sprint_results (resultId, raceId, driverId, constructorId, number, g
 ```
 
 #### status ***(Full query available in files)***
-```
+```SQL
 CREATE TABLE status(
   statusId INT PRIMARY KEY,
   status VARCHAR(30)
@@ -343,23 +343,23 @@ INSERT INTO status (statusId, status) VALUES(10, 'Electrical');
 
 ## Confirming the start and end date of the dataset
 - An SQL query was used to confirm the dataset covers the time span of modern Formula 1
-```
+```SQL
 SELECT MIN(year),MAX(year)
 FROM races;
 ```
 
 ## Querying circuits
 - SQL queries were executed to determine how many circuits have hosted F1 races
-```
+```SQL
 SELECT COUNT(*) AS num_of_circuits
 FROM circuits;
 ```
 - SQL queries were executed to know how many countries have hosted a race and the number of tracks in each country
-```
+```SQL
 SELECT COUNT(DISTINCT COUNTRY) AS num_of_countries
 FROM circuits;
 ```
-```
+```SQL
 SELECT country, COUNT(*) AS num_of_tracks
 FROM circuits
 GROUP BY 1
@@ -368,7 +368,7 @@ ORDER BY 2 DESC;
 
 ## Querying qualifying
 - Qualifying is the chance for drivers to determine where they line up for the coming race and show their raw pace in the car. Drivers are compared to their teammates in similar machinery to determine how fast they are. Placing first in qualifying (pole postion) usually bodes well for the coming race
-```
+```SQL
 -- Which 5 drivers have the most pole positions
 SELECT drivers.surname AS driver, COUNT(qualifying.position) AS num_of_poles
 FROM qualifying
@@ -378,7 +378,7 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 5;
 ```
-```
+```SQL
 -- Which constructor has the most Q3 entries
 SELECT constructors.name, COUNT(position) AS num_of_Q3
 FROM qualifying
@@ -388,7 +388,7 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 1;
 ```
-```
+```SQL
 -- Which starting position gives the highest chance of winning at each circuit
 WITH positions AS(
 SELECT circuits.name AS circuit, results.grid AS start_position, COUNT(results.position) AS num_of_wins,
@@ -405,7 +405,7 @@ FROM positions
 WHERE (circuit, start_position, num_of_wins) = (circuit, start_position, most_wins);
 ```
 - Finding the head-to-head record between teammates for each season and for the duration of the pairing with the help of Common Table Expressions (CTE)
-```
+```SQL
 -- Qualifying head-to-head between teammates (Grouped into seasons)
 WITH driver1 AS
 (SELECT * FROM (select races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver, qualifying.position AS 1_quali_position,
@@ -449,7 +449,7 @@ GROUP BY 1,2,3,4
 ORDER BY 1,2,3,4) AS table2 
 GROUP BY 1,2,3) AS table3;
 ```
-```
+```SQL
 -- Qualifying head-to-head between teammates (Without season grouping)
 WITH driver1 AS
 (SELECT * 
@@ -502,7 +502,7 @@ FROM (
 ```
 
 - Using JOIN and TEMPORARY TABLES, the fastest lap at each circuit was determined as well as the driver who set the lap
-```
+```SQL
 -- Data is limited so fastest lap for only 40 tracks available
 # Adding drivers' name to laptimes table
 DROP TABLE IF EXISTS drivers_laps;
@@ -530,12 +530,12 @@ WHERE (circuits.name, time) IN (SELECT * from fastest_lap);
 
 ## Querying constructors
 - The total number of constructors that have been in the sport was determined
-```
+```SQL
 SELECT COUNT(DISTINCT name) AS constructors
 FROM constructors;
 ```
 - USING JOIN, the success of each constructor was evaluated based on points accumulated and wins
-```
+```SQL
 -- How many points has each constructor scored
 SELECT constructors.name, SUM(points) AS total_points
 FROM constructor_results
@@ -553,7 +553,7 @@ GROUP BY 1
 ORDER BY 2 DESC;
 ```
 - One important accomplishment for a constructor is finishing a race with both cars in the lead (1-2 finish). The constructor with the most 1-2 finishes was determined
-```
+```SQL
 -- Which constructor has the most 1st and 2nd finishes in a single race
 DROP VIEW IF EXISTS first_place;
 CREATE VIEW first_place AS 
@@ -579,7 +579,7 @@ ORDER BY 2 DESC
 LIMIT 1;
 ```
 - In order to succeed in Formula 1, the car and driver have to be reliable. The most unreliable constructor was determined by calculating the percentage of races they were eligible for but did not start or complete
-```
+```SQL
 -- Which constructor is most unreliable (DNFs as a percentage of number of races)
 DROP VIEW IF EXISTS status_mod;
 CREATE VIEW status_mod AS
@@ -622,17 +622,17 @@ ORDER BY 2;
 
 ## Querying drivers
 - SQL queries were executed to determine the number of drivers, the different nationalities as well as the number of drivers produced from each country
-```
+```SQL
 -- How many drivers have raced in Formula 1
 SELECT COUNT(DISTINCT driverid) num_of_drivers
 FROM drivers;
 ```
-```
+```SQL
 -- How many different driver nationalities have raced in F1
 SELECT COUNT(DISTINCT nationality) AS num_of_nationalities
 FROM drivers;
 ```
-```
+```SQL
 -- How many drivers come from each country
 SELECT nationality, COUNT(driverId) AS num_of_drivers
 FROM drivers
@@ -640,7 +640,7 @@ GROUP BY 1
 ORDER BY 2 DESC;
 ```
 - Each constructor fields a maximum of 2 cars and teammate pairings determine how well a constructor will do. The teammate pairings for each constructor in each season were extracted from the data
-```
+```SQL
 WITH driver1 AS
 (SELECT * FROM (
 	SELECT races.raceid, races.year, constructors.name AS constructor, drivers.surname AS first_driver,
@@ -675,7 +675,7 @@ WHERE row_num = 1
 	AND first_driver != second_driver;
 ```
 - Longevity is an admired quality in sports. The 5 drivers with the most races was determined
-```
+```SQL
 -- Which 5 drivers have the most races
 SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.driverid) AS num_of_races
 FROM drivers
@@ -685,7 +685,7 @@ ORDER BY 2 DESC
 LIMIT 5;
 ```
 - The goal for drivers in Formuula 1 is to win races and if not, get on the podium
-```
+```SQL
 -- Which 5 drivers have the most wins
 SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.position) AS num_of_wins
 FROM drivers
@@ -695,7 +695,7 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 5;
 ```
-```
+```SQL
 -- Which 5 drivers have the most podium finishes
 SELECT CONCAT(forename, ' ',  surname) AS name, COUNT(results.position) AS num_of_podiums
 FROM drivers
@@ -705,7 +705,7 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 5;
 ```
-```
+```SQL
 -- Driver win percentage
 WITH num_races AS(
 SELECT drivers.driverId, surname AS name, COUNT(results.driverid) AS num_of_races
@@ -727,7 +727,7 @@ FROM num_races
 	JOIN num_wins on num_races.driverId = num_wins.driverId
 ORDER BY 3 DESC;
 ```
-```
+```SQL
 -- Which drivers have never finised on the podium
 SELECT CONCAT(forename, ' ',  surname) AS nonpodium_finishers
 FROM drivers
@@ -737,7 +737,7 @@ FROM drivers
 JOIN results ON drivers.driverId = results.driverId
 WHERE results.position IN (1, 2, 3));
 ```
-```
+```SQL
 -- How many drivers have never finished on the podium
 SELECT COUNT(forename) AS num_of_nonpodium_finishers
 FROM drivers
@@ -750,7 +750,7 @@ WHERE results.position IN (1, 2, 3));
 
 ## Querying pit_stops
 - An important aspect of a Formula 1 race is the pit stop. The duration of a pitstop can be the make it or break it point in a race. This is a factor of both the driver's ability and team mechanics. The average pit stop duration for each driver was determined
-```
+```SQL
 SELECT pit_stops.driverId, drivers.surname, ROUND(AVG(duration),2) AS AVG_pitstop_duration
 FROM pit_stops
 JOIN drivers ON pit_stops.driverid = drivers.driverid
